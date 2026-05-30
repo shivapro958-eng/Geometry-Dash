@@ -1,0 +1,236 @@
+    <script>
+        const canvas = document.getElementById('subwayCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // UI Bindings
+        const startScreen = document.getElementById('start-screen');
+        const gameoverScreen = document.getElementById('gameover-screen');
+        const scoreDisplay = document.getElementById('score-display');
+        const coinsDisplay = document.getElementById('coins-display');
+
+        // Configuration
+        const LANES = [70, 200, 330]; // Fixed array coordinates for 3 lanes
+        let gameActive = false;
+        let score = 0;
+        let coins = 0;
+        let speed = 6;
+        let gameObjects = [];
+        let gridLinesY = 0;
+
+        // Player Profile
+        const player = {
+            lane: 1,            // Start in middle lane (0=Left, 1=Center, 2=Right)
+            currentX: 200,      // Matches center lane target position
+            y: 500,
+            baseY: 500,
+            radius: 16,
+            jumpOffsetY: 0,
+            jumpVelocity: 0,
+            isJumping: false,
+            isSliding: false,
+            slideTimer: 0,
+            heightModifier: 1,  // Dynamic hitbox scale
+            widthModifier: 1
+        };
+
+        // Key Listeners
+        window.addEventListener('keydown', (e) => {
+            if (!gameActive) return;
+            
+            if (e.key === 'ArrowLeft' && player.lane > 0) {
+                player.lane--;
+            }
+            if (e.key === 'ArrowRight' && player.lane < 2) {
+                player.lane++;
+            }
+            if (e.key === 'ArrowUp' && !player.isJumping && !player.isSliding) {
+                player.isJumping = true;
+                player.jumpVelocity = -14;
+            }
+            if (e.key === 'ArrowDown' && !player.isJumping && !player.isSliding) {
+                player.isSliding = true;
+                player.slideTimer = 25; // Duration in frames
+            }
+        });
+
+        class Obstacle {
+            constructor() {
+                this.lane = Math.floor(Math.random() * 3);
+                this.x = LANES[this.lane];
+                this.y = -60;
+                this.width = 60;
+                this.height = 40;
+                // Randomly generate High Barrier (Jump under) or Low Wall (Jump over)
+                this.type = Math.random() > 0.5 ? 'tall' : 'low'; 
+                this.color = this.type === 'tall' ? '#ff0844' : '#ffb199';
+            }
+            update() { this.y += speed; }
+            draw() {
+                ctx.save();
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                ctx.fillStyle = this.color;
+                if (this.type === 'tall') {
+                    ctx.fillRect(this.x - this.width/2, this.y, this.width, this.height - 10);
+                    ctx.fillRect(this.x - this.width/2, this.y, 6, 60);
+                    ctx.fillRect(this.x + this.width/2 - 6, this.y, 6, 60);
+                } else {
+                    ctx.fillRect(this.x - this.width/2, this.y + 20, this.width, this.height);
+                }
+                ctx.restore();
+            }
+        }
+
+        class Coin {
+            constructor() {
+                this.lane = Math.floor(Math.random() * 3);
+                this.x = LANES[this.lane];
+                this.y = -40;
+                this.radius = 10;
+                this.pulse = 0;
+            }
+            update() { 
+                this.y += speed; 
+                this.pulse += 0.1;
+            }
+            draw() {
+                ctx.save();
+                ctx.beginPath();
+                let r = this.radius * Math.abs(Math.sin(this.pulse));
+                ctx.arc(this.x, this.y, Math.max(r, 2), 0, Math.PI * 2);
+                ctx.fillStyle = '#ffd700';
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = '#ffd700';
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function startGame() {
+            score = 0;
+            coins = 0;
+            speed = 6;
+            gameObjects = [];
+            player.lane = 1;
+            player.currentX = LANES[1];
+            player.jumpOffsetY = 0;
+            player.isJumping = false;
+            player.isSliding = false;
+            gameActive = true;
+
+            startScreen.classList.add('hidden');
+            gameoverScreen.classList.add('hidden');
+            scoreDisplay.classList.remove('hidden');
+            coinsDisplay.classList.remove('hidden');
+
+            loop();
+        }
+
+        function triggerGameOver() {
+            gameActive = false;
+            scoreDisplay.classList.add('hidden');
+            coinsDisplay.classList.add('hidden');
+            gameoverScreen.classList.remove('hidden');
+            document.getElementById('final-score').textContent = score;
+            document.getElementById('final-coins').textContent = coins;
+        }
+
+        function loop() {
+            if (!gameActive) return;
+
+            ctx.fillStyle = '#111122';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Speed Grid Lines
+            gridLinesY = (gridLinesY + speed) % 60;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 2;
+            for (let y = gridLinesY; y < canvas.height; y += 60) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            // Vertical Track Dividers
+            ctx.strokeStyle = 'rgba(0, 242, 254, 0.15)';
+            ctx.strokeRect(140, 0, 1, canvas.height);
+            ctx.strokeRect(260, 0, 1, canvas.height);
+
+            score += 1;
+            document.getElementById('val-score').textContent = score;
+            document.getElementById('val-coins').textContent = coins;
+            speed += 0.002;
+
+            // Player Updates & Animations
+            player.currentX += (LANES[player.lane] - player.currentX) * 0.25;
+
+            if (player.isJumping) {
+                player.jumpOffsetY += player.jumpVelocity;
+                player.jumpVelocity += 0.8;
+                if (player.jumpOffsetY >= 0) {
+                    player.jumpOffsetY = 0;
+                    player.isJumping = false;
+                }
+            }
+
+            if (player.isSliding) {
+                player.slideTimer--;
+                player.heightModifier = 0.5;
+                player.widthModifier = 1.3;
+                if (player.slideTimer <= 0) {
+                    player.isSliding = false;
+                    player.heightModifier = 1.0;
+                    player.widthModifier = 1.0;
+                }
+            }
+
+            let actualY = player.y + player.jumpOffsetY;
+            ctx.save();
+            ctx.beginPath();
+            ctx.ellipse(player.currentX, actualY, player.radius * player.widthModifier, player.radius * player.heightModifier, 0, 0, Math.PI*2);
+            ctx.fillStyle = '#00f2fe';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00f2fe';
+            ctx.fill();
+            ctx.restore();
+
+            // Object Management
+            if (Math.random() < 0.015) {
+                gameObjects.push(Math.random() > 0.4 ? new Obstacle() : new Coin());
+            }
+
+            for (let i = gameObjects.length - 1; i >= 0; i--) {
+                let obj = gameObjects[i];
+                obj.update();
+                obj.draw();
+
+                if (obj.y > canvas.height + 50) {
+                    gameObjects.splice(i, 1);
+                    continue;
+                }
+
+                if (obj instanceof Coin) {
+                    let dx = player.currentX - obj.x;
+                    let dy = actualY - obj.y;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < player.radius + obj.radius) {
+                        coins++;
+                        gameObjects.splice(i, 1);
+                    }
+                } 
+                else if (obj instanceof Obstacle) {
+                    let horizontalMatch = Math.abs(player.currentX - obj.x) < (obj.width/2 + player.radius * 0.8);
+                    
+                    if (horizontalMatch && obj.y + obj.height > actualY - player.radius && obj.y < actualY + player.radius) {
+                        if (obj.type === 'tall' && player.isSliding) continue;
+                        if (obj.type === 'low' && player.jumpOffsetY < -20) continue;
+                        
+                        triggerGameOver();
+                        return;
+                    }
+                }
+            }
+
+            requestAnimationFrame(loop);
+        }
+    </script>
